@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Kelsen Notebook</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <style>
+            .kelsen-keyword { color: #0066cc; font-weight: bold; }
+            .editor-wrapper {
+                position: relative;
+                height: 500px;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                display: flex;  /* Add flex display */
+                background: white;
+            }
+            #editor {
+                flex: 1;  /* Take remaining space */
+                font-family: monospace;
+                padding: 1rem;
+                padding-left: 3.5rem;  /* Increased left padding to accommodate line numbers */
+                resize: none;
+                tab-size: 4;
+                width: calc(100% - 40px);  /* Adjust width to account for line numbers */
+                border: none;  /* Remove border as wrapper has it */
+                outline: none;  /* Remove outline */
+                color: transparent;
+                background: transparent;
+                caret-color: black;
+                position: relative;
+                z-index: 1;
+                font-size: 14px;
+                white-space: pre;
+            }
+            .line-numbers {
+                position: absolute;
+                left: 0;
+                top: 0;
+                bottom: 0;
+                width: 40px;  /* Increased width */
+                background: #f5f5f5;
+                border-right: 1px solid #ddd;
+                padding: 1rem 0;
+                text-align: right;
+                color: #666;
+                user-select: none;
+                font-family: monospace;  /* Match editor font */
+                line-height: inherit;  /* Match editor line height */
+                font-size: 14px;
+            }
+            
+            .display-overlay {
+                position:absolute;
+                top:0;
+                left:0;
+                right:0;
+                bottom:0;
+                pointer-events: none;
+                padding: 1rem;
+                padding-left: 3.5rem;
+                white-space: pre;
+                overflow: hidden;
+                tab-size: 4;
+            }
+
+            .output-section {
+                max-height: 300px;
+                overflow-y: auto;
+            }
+    
+            /* Add line height to match editor and line numbers */
+            #editor, .line-numbers, .display-overlay {
+                line-height: 1.5;
+                font-family: monospace;
+                font-size: 14px;
+                padding-top: 1rem;
+            }
+    
+            /* Ensure line numbers align with text */
+            .line-numbers div {
+                padding-right: 8px;
+            }
+            .token-declaration { color: #0066cc; font-weight: 500; }
+            .token-operator { color: #6b46c1; }
+            .token-value { color: #047857; }
+            .token-role { color: #ea580c; }
+            .token-string { color: #047857; }
+            .token-number { color: #0066cc; }
+
+        </style>
+    </head>
+<body class="bg-gray-50">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold mb-4">Kelsen Notebook</h1>
+        
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <!-- Editor Column -->
+            <div class="space-y-4">
+                <div class="editor-wrapper bg-white">
+                    <div class="line-numbers" id="lineNumbers"></div>
+                    <textarea id="editor" spellcheck="false" 
+                              class="pl-10 bg-white"
+                              placeholder="Enter your Kelsen code here..."></textarea>
+                </div>
+                
+                <div class="flex space-x-2">
+                    <button onclick="executeCode()" 
+                            class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                        Execute Code
+                    </button>
+                    <button onclick="saveCode()"
+                            class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                        Download
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Results Column -->
+            <div class="space-y-4" id="results-column">
+                <!-- Contract Text -->
+                <div id="contract-section" class="bg-white p-4 rounded shadow hidden">
+                    <h2 class="text-xl font-bold mb-2">Generated Contract</h2>
+                    <div class="output-section bg-gray-50 p-3 rounded">
+                        <pre id="contract-output" class="whitespace-pre-wrap"></pre>
+                    </div>
+                </div>
+
+                <!-- Legal Analysis -->
+                <div id="legal-section" class="bg-white p-4 rounded shadow hidden">
+                    <h2 class="text-xl font-bold mb-2">Legal Analysis</h2>
+                    <div class="output-section bg-gray-50 p-3 rounded">
+                        <pre id="legal-output" class="whitespace-pre-wrap"></pre>
+                    </div>
+                </div>
+
+                <!-- Timeline Analysis -->
+                <div id="timeline-section" class="bg-white p-4 rounded shadow hidden">
+                    <h2 class="text-xl font-bold mb-2">Procedural Analysis</h2>
+                    <div class="output-section bg-gray-50 p-3 rounded">
+                        <pre id="timeline-output" class="whitespace-pre-wrap"></pre>
+                    </div>
+                </div>
+
+                <!-- Kelsen Output -->
+                <div id="kelsen-section" class="bg-white p-4 rounded shadow hidden">
+                    <h2 class="text-xl font-bold mb-2">Kelsen Output</h2>
+                    <div class="output-section bg-gray-50 p-3 rounded">
+                        <pre id="kelsen-output" class="whitespace-pre-wrap"></pre>
+                    </div>
+                </div>
+
+                <!-- Error Display -->
+                <div id="error-section" class="bg-white p-4 rounded shadow hidden">
+                    <h2 class="text-xl font-bold mb-2 text-red-600">Error</h2>
+                    <div class="bg-red-50 p-3 rounded text-red-600">
+                        <pre id="error-output" class="whitespace-pre-wrap"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+
+        const KELSEN_KEYWORDS = {
+            declarations: ['string', 'asset', 'subject', 'clause'],
+            operators: ['CR( ', 'OB( ', 'PR( ', 'PVG( ', '{', '}', '=', ';', ',', ')', 'AND'],
+            values: ['Service', 'Property', 'NM', 'M', '+', '-'],
+            roles: ['COMPRADOR', 'VENDEDOR', 'PROPIETARIO', 'ACREEDOR', 'DEUDOR', 'ADQUIRENTE', 
+                    'MUTUANTE', 'MUTUARIO', 'ARRENDADOR', 'ARRENDATARIO', 'OFERENTE']
+        };
+        // Line numbers handling
+        const editor = document.getElementById('editor');
+        const lineNumbers = document.getElementById('lineNumbers');
+        
+                
+        function highlightCode(text) {
+            // Split the code keeping delimiters and spaces
+            let tokens = text.split(/(\s+|[;,(){}=])/);
+            let highlightedCode = '';
+
+            for (let token of tokens) {
+                if (!token) continue;
+                
+                // Check what kind of token this is
+                if (KELSEN_KEYWORDS.declarations.includes(token.trim())) {
+                    highlightedCode += `<span class="text-blue-600 font-medium">${token}</span>`;
+                } else if (KELSEN_KEYWORDS.operators.includes(token.trim())) {
+                    highlightedCode += `<span class="text-purple-600">${token}</span>`;
+                } else if (KELSEN_KEYWORDS.values.includes(token.trim())) {
+                    highlightedCode += `<span class="text-green-600">${token}</span>`;
+                } else if (KELSEN_KEYWORDS.roles.includes(token.trim())) {
+                    highlightedCode += `<span class="text-orange-600">${token}</span>`;
+                } else if (token.startsWith('"') && token.endsWith('"')) {
+                    // String literals
+                    highlightedCode += `<span class="text-green-600">${token}</span>`;
+                } else if (!isNaN(token)) {
+                    // Numbers
+                    highlightedCode += `<span class="text-blue-600">${token}</span>`;
+                } else if (token.trim().length === 0) {
+                    // Preserve whitespace
+                    highlightedCode += token;
+                } else {
+                    // Default text
+                    highlightedCode += token;
+                }
+            }
+
+            return highlightedCode;
+        }
+
+        // Create a display element for highlighted code
+        const displayDiv = document.createElement('div');
+        displayDiv.className = 'display-overlay';
+        document.querySelector('.editor-wrapper').appendChild(displayDiv);
+
+        // Update the editor input handler
+        editor.addEventListener('input', function() {
+            updateLineNumbers();
+            // Update the highlighted display
+            displayDiv.innerHTML = highlightCode(this.value);
+            displayDiv.scrollTop = this.scrollTop;
+            displayDiv.scrollLeft = this.scrollLeft;
+        });
+
+        // Add scroll sync
+        editor.addEventListener('scroll', function() {
+            displayDiv.scrollTop = this.scrollTop;
+            displayDiv.scrollLeft = this.scrollLeft;
+        });
+
+        // Make editor background transparent
+        editor.style.background = 'transparent';
+        editor.style.caretColor = 'black'; // Keep the cursor visible
+
+        // Make editor wrapper relative for absolute positioning of display
+        document.querySelector('.editor-wrapper').style.position = 'relative';
+
+        function updateLineNumbers() {
+            const lines = editor.value.split('\n').length;
+            lineNumbers.innerHTML = Array(lines)
+                .fill()
+                .map((_, i) => `<div class="px-2">${i + 1}</div>`)
+                .join('');
+        }
+        
+        editor.addEventListener('input', updateLineNumbers);
+        editor.addEventListener('scroll', () => {
+            lineNumbers.scrollTop = editor.scrollTop;
+        });
+        updateLineNumbers();
+
+        // Execution handling
+        async function executeCode() {
+            const code = editor.value;
+            if (!code.trim()) {
+                showError('Please enter some code to execute');
+                return;
+            }
+
+            // Hide any previous results/errors
+            hideAllSections();
+            
+            try {
+                const codeId = Math.random().toString(36).substr(2, 9);
+                const response = await fetch(`/execute/${codeId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ code })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Show all successful outputs
+                    if (result.natural_language) {
+                        document.getElementById('contract-section').classList.remove('hidden');
+                        document.getElementById('contract-output').textContent = result.natural_language;
+                    }
+                    
+                    if (result.legal_analysis) {
+                        document.getElementById('legal-section').classList.remove('hidden');
+                        document.getElementById('legal-output').textContent = result.legal_analysis;
+                    }
+                    
+                    if (result.timeline_result) {
+                        document.getElementById('timeline-section').classList.remove('hidden');
+                        document.getElementById('timeline-output').textContent = result.timeline_result;
+                    }
+                    
+                    if (result.kelsen_output) {
+                        document.getElementById('kelsen-section').classList.remove('hidden');
+                        document.getElementById('kelsen-output').textContent = result.kelsen_output;
+                    }
+                } else {
+                    showError(result.error || 'Execution failed');
+                }
+            } catch (error) {
+                showError('Error executing code: ' + error.message);
+            }
+        }
+
+        function hideAllSections() {
+            ['contract-section', 'legal-section', 'timeline-section', 
+             'kelsen-section', 'error-section'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+        }
+
+        function showError(message) {
+            const errorSection = document.getElementById('error-section');
+            const errorOutput = document.getElementById('error-output');
+            errorSection.classList.remove('hidden');
+            errorOutput.textContent = message;
+        }
+
+        async function downloadCode() {
+            const code = editor.value;
+            if (!code.trim()) {
+                showError('No code to download');
+                return;
+            }
+
+            try {
+                const codeId = Math.random().toString(36).substr(2, 9);
+                const response = await fetch(`/download/${codeId}?code=${encodeURIComponent(code)}`);
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `kelsen_code_${codeId}.kelsen`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    a.remove();
+                } else {
+                    showError('Error downloading code');
+                }
+            } catch (error) {
+                showError('Error downloading code: ' + error.message);
+            }
+        }
+
+        async function saveCode() {
+            const code = editor.value;
+            if (!code.trim()) {
+                showError('No code to save');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/save', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ code })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    alert(`Code saved as ${result.filename}`);
+                } else {
+                    showError(result.error || 'Error saving code');
+                }
+            } catch (error) {
+                showError('Error saving code: ' + error.message);
+            }
+        }
+        
+    </script>
+</body>
+</html>
